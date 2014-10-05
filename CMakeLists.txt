@@ -11,9 +11,9 @@ project(QuasselIRC)
 
 # Versions
 set(QUASSEL_MAJOR  0)
-set(QUASSEL_MINOR 11)
+set(QUASSEL_MINOR 12)
 set(QUASSEL_PATCH  0)
-set(QUASSEL_VERSION_STRING "0.11-pre")
+set(QUASSEL_VERSION_STRING "0.12-pre")
 
 # Tell CMake about or own modules
 set(CMAKE_MODULE_PATH ${CMAKE_SOURCE_DIR}/cmake)
@@ -34,6 +34,11 @@ include(FeatureSummary)
 include(QuasselCompileSettings)
 include(QuasselMacros)
 
+# Setting COMPILE_DEFINITIONS_<CONFIG> is deprecated since CMake 3.0 in favor of generator expressions.
+# These have existed since CMake 2.8.10; until we depend on that, we have to explicitly enable the old policy.
+if (CMAKE_MAJOR_VERSION GREATER 2)
+    cmake_policy(SET CMP0043 OLD)
+endif()
 
 # Options and variables that can be set on the command line
 #####################################################################
@@ -246,16 +251,23 @@ if (USE_QT5)
                            DESCRIPTION "contains tools for handling translation files"
                            PURPOSE "Required for having translations"
     )
-    # Qt5 does not define a target for lconvert, so we need to find it ourselves
+    # Some Qt5 versions do not define a target for lconvert, so we need to find it ourselves
     if (Qt5LinguistTools_FOUND)
         if (NOT TARGET Qt5::lconvert AND TARGET Qt5::lrelease)
             get_target_property(_lrelease_location Qt5::lrelease LOCATION)
             get_filename_component(_lrelease_path ${_lrelease_location} PATH)
             find_program(QT_LCONVERT_EXECUTABLE NAMES lconvert-qt5 lconvert PATHS ${_lrelease_path} NO_DEFAULT_PATH NO_CMAKE_FIND_ROOT_PATH)
+        elseif(TARGET Qt5::lconvert AND NOT Qt5_LCONVERT_EXECUTABLE)
+            # Newer Qt5 versions define the target, but not the Qt5_LCONVERT_EXECUTABLE variable for some reason
+            get_target_property(QT_LCONVERT_EXECUTABLE Qt5::lconvert LOCATION)
         endif()
+
         # Compatibility with the Qt4 variables
-        set (QT_LRELEASE_EXECUTABLE ${Qt5_LRELEASE_EXECUTABLE})
-        set (QT_LUPDATE_EXECUTABLE ${Qt5_LUPDATE_EXECUTABLE})
+        set(QT_LRELEASE_EXECUTABLE ${Qt5_LRELEASE_EXECUTABLE})
+        set(QT_LUPDATE_EXECUTABLE ${Qt5_LUPDATE_EXECUTABLE})
+        if (Qt5_LCONVERT_EXECUTABLE)
+            set(QT_LCONVERT_EXECUTABLE ${Qt5_LCONVERT_EXECUTABLE})
+        endif()
     endif()
 
 else(USE_QT5)

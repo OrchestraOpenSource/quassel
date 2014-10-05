@@ -82,7 +82,7 @@ CoreNetwork::CoreNetwork(const NetworkId &networkid, CoreSession *session)
     connect(this, SIGNAL(newEvent(Event *)), coreSession()->eventManager(), SLOT(postEvent(Event *)));
 
     if (Quassel::isOptionSet("oidentd")) {
-        connect(this, SIGNAL(socketInitialized(const CoreIdentity*, QHostAddress, quint16, QHostAddress, quint16)), Core::instance()->oidentdConfigGenerator(), SLOT(addSocket(const CoreIdentity*, QHostAddress, quint16, QHostAddress, quint16)), Qt::BlockingQueuedConnection);
+        connect(this, SIGNAL(socketOpen(const CoreIdentity*, QHostAddress, quint16, QHostAddress, quint16)), Core::instance()->oidentdConfigGenerator(), SLOT(addSocket(const CoreIdentity*, QHostAddress, quint16, QHostAddress, quint16)), Qt::BlockingQueuedConnection);
         connect(this, SIGNAL(socketDisconnected(const CoreIdentity*, QHostAddress, quint16, QHostAddress, quint16)), Core::instance()->oidentdConfigGenerator(), SLOT(removeSocket(const CoreIdentity*, QHostAddress, quint16, QHostAddress, quint16)));
     }
 }
@@ -411,7 +411,10 @@ void CoreNetwork::socketHasData()
 {
     while (socket.canReadLine()) {
         QByteArray s = socket.readLine();
-        s.chop(2);
+        if (s.endsWith("\r\n"))
+            s.chop(2);
+        else if (s.endsWith("\n"))
+            s.chop(1);
         NetworkDataEvent *event = new NetworkDataEvent(EventManager::NetworkIncoming, this, s);
 #if QT_VERSION >= 0x040700
         event->setTimestamp(QDateTime::currentDateTimeUtc());
@@ -441,6 +444,15 @@ void CoreNetwork::socketError(QAbstractSocket::SocketError error)
 
 void CoreNetwork::socketInitialized()
 {
+    CoreIdentity *identity = identityPtr();
+    if (!identity) {
+        qCritical() << "Identity invalid!";
+        disconnectFromIrc();
+        return;
+    }
+    
+    emit socketOpen(identity, localAddress(), localPort(), peerAddress(), peerPort());
+    
     Server server = usedServer();
 #ifdef HAVE_SSL
     if (server.useSsl && !socket.isEncrypted())
@@ -449,12 +461,6 @@ void CoreNetwork::socketInitialized()
 #if QT_VERSION >= 0x040600
     socket.setSocketOption(QAbstractSocket::KeepAliveOption, true);
 #endif
-    CoreIdentity *identity = identityPtr();
-    if (!identity) {
-        qCritical() << "Identity invalid!";
-        disconnectFromIrc();
-        return;
-    }
 
     emit socketInitialized(identity, localAddress(), localPort(), peerAddress(), peerPort());
 
